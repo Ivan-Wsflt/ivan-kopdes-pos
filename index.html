@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ivan Kopdes POS - Sistem Kasir Minimarket Modern</title>
+  <meta name="description" content="Aplikasi Web Kasir Point of Sale (POS) ala minimarket dengan barcode scanner kamera, katalog produk, kalkulasi struk otomatis, dan cetak thermal.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Html5-QRCode Library untuk Scanner Barcode Kamera -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Navigation / Header Kasir Minimarket -->
+  <header class="pos-header">
+    <div class="brand-container">
+      <div class="brand-logo">
+        <div class="logo-stripes">
+          <span class="stripe blue"></span>
+          <span class="stripe red"></span>
+          <span class="stripe yellow"></span>
+        </div>
+        <div class="brand-text">
+          <h1>IVAN <span>KOPDES</span></h1>
+          <p class="tagline">Sistem Kasir Modern Minimarket</p>
+        </div>
+      </div>
+      <div class="store-badge">
+        <i class="fa-solid fa-store"></i>
+        <span>Cab. Merdeka No. 45</span>
+      </div>
+    </div>
+
+    <!-- Info Status Kasir & Waktu -->
+    <div class="header-status">
+      <div class="status-card">
+        <i class="fa-solid fa-user-tie"></i>
+        <div class="status-details">
+          <small>Kasir Aktif</small>
+          <strong>Ahmad Fauzi</strong>
+        </div>
+      </div>
+      <div class="status-card">
+        <i class="fa-solid fa-clock"></i>
+        <div class="status-details">
+          <small>Waktu Lokal</small>
+          <strong id="liveClock">00:00:00 WIB</strong>
+        </div>
+      </div>
+      <div class="status-card system-ready">
+        <span class="pulse-dot"></span>
+        <div class="status-details">
+          <small>Status Sistem</small>
+          <strong>ONLINE</strong>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main POS Workspace Layout (2 Kolom: Kiri Operasional & Kanan Struk) -->
+  <main class="pos-workspace">
+
+    <!-- ==================== KOLOM KIRI: SCANNER, PENCARIAN, & KATALOG ==================== -->
+    <section class="left-panel">
+
+      <!-- Kartu Barcode Scanner Kamera -->
+      <div class="panel-card scanner-card">
+        <div class="card-header">
+          <div class="header-title">
+            <i class="fa-solid fa-barcode"></i>
+            <h2>Kamera Scanner Barcode</h2>
+          </div>
+          <div class="camera-actions">
+            <!-- Dropdown Pemilihan Kamera -->
+            <select id="cameraSelect" class="form-select camera-select" title="Pilih Kamera" disabled>
+              <option value="">Mencari kamera...</option>
+            </select>
+            <!-- Tombol Toggle On/Off Kamera -->
+            <button id="btnToggleCamera" class="btn btn-primary btn-sm">
+              <i class="fa-solid fa-camera"></i>
+              <span id="btnCameraText">Buka Kamera</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <!-- Viewport Kamera Scanner -->
+          <div class="scanner-viewport-wrapper">
+            <div id="interactiveScanner">
+              <!-- Placeholder saat kamera belum diaktifkan -->
+              <div class="scanner-placeholder" id="scannerPlaceholder">
+                <div class="scanner-icon-animated">
+                  <i class="fa-solid fa-qrcode"></i>
+                  <div class="laser-beam"></div>
+                </div>
+                <h3>Scanner Kamera Belum Aktif</h3>
+                <p>Klik tombol <strong>"Buka Kamera"</strong> di atas untuk memindai barcode produk fisik secara langsung.</p>
+                <div class="scanner-tips">
+                  <span><i class="fa-solid fa-lightbulb"></i> Tips: Pastikan barcode cukup terang dan berada di dalam bingkai</span>
+                </div>
+              </div>
+            </div>
+            <!-- Laser scanning animation overlay saat kamera menyala -->
+            <div id="scannerOverlay" class="scanner-active-overlay hidden">
+              <div class="target-frame">
+                <div class="target-corner top-left"></div>
+                <div class="target-corner top-right"></div>
+                <div class="target-corner bottom-left"></div>
+                <div class="target-corner bottom-right"></div>
+                <div class="active-laser"></div>
+              </div>
+              <span class="laser-label">Arahkan Barcode ke Dalam Kotak</span>
+            </div>
+          </div>
+
+          <!-- Indikator hasil scan terakhir -->
+          <div class="last-scan-banner" id="lastScanBanner">
+            <i class="fa-solid fa-check-circle"></i>
+            <span>Siap memindai barcode barang...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Area Input Manual & Pencarian Produk -->
+      <div class="panel-card search-card">
+        <div class="card-header">
+          <div class="header-title">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <h2>Input Manual & Pencarian</h2>
+          </div>
+          <span class="badge badge-info">Bisa Scan via Barcode Scanner USB / Ketik Manual</span>
+        </div>
+        <div class="card-body">
+          <form id="barcodeInputForm" class="barcode-input-form" onsubmit="event.preventDefault();">
+            <div class="input-icon-group">
+              <i class="fa-solid fa-barcode prefix-icon"></i>
+              <input 
+                type="text" 
+                id="manualBarcodeInput" 
+                class="form-control" 
+                placeholder="Ketik / Scan kode barcode (lalu tekan Enter)..." 
+                autocomplete="off"
+                autofocus
+              >
+              <button type="button" id="btnClearManualInput" class="btn-clear hidden" title="Hapus teks">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <button type="submit" id="btnSubmitBarcode" class="btn btn-warning">
+              <i class="fa-solid fa-cart-plus"></i> Tambah
+            </button>
+          </form>
+
+          <!-- Input Filter Pencarian Nama Barang -->
+          <div class="search-filter-row">
+            <div class="search-input-box">
+              <i class="fa-solid fa-search"></i>
+              <input 
+                type="text" 
+                id="searchProductInput" 
+                placeholder="Cari nama barang (misal: Indomie, Aqua, Teh...)" 
+                autocomplete="off"
+              >
+            </div>
+            <!-- Kategori Filter Tabs -->
+            <div class="category-tabs" id="categoryTabs">
+              <button class="cat-pill active" data-category="ALL">Semua</button>
+              <button class="cat-pill" data-category="Makanan">Makanan</button>
+              <button class="cat-pill" data-category="Minuman">Minuman</button>
+              <button class="cat-pill" data-category="Snack">Snack</button>
+              <button class="cat-pill" data-category="Perawatan">Perawatan</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Katalog Produk Cepat (Dummy Database Minimarket) -->
+      <div class="panel-card catalog-card">
+        <div class="card-header">
+          <div class="header-title">
+            <i class="fa-solid fa-boxes-stacked"></i>
+            <h2>Katalog Produk Minimarket</h2>
+            <span class="count-badge" id="productCountBadge">14 Item</span>
+          </div>
+          <div class="header-help">
+            <small><i class="fa-solid fa-hand-pointer"></i> Klik kartu produk untuk simulasi scan instan</small>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="product-grid" id="productGrid">
+            <!-- Diisi secara dinamis oleh JavaScript -->
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== KOLOM KANAN: KERANJANG & CHECKOUT ==================== -->
+    <section class="right-panel">
+      <div class="pos-cart-container">
+        
+        <!-- Header Struk / Kasir -->
+        <div class="cart-header">
+          <div class="cart-title">
+            <div class="cart-icon">
+              <i class="fa-solid fa-receipt"></i>
+            </div>
+            <div>
+              <h2>Struk Belanja Kasir</h2>
+              <p class="invoice-number" id="invoiceNumber">TRX-20261004-001</p>
+            </div>
+          </div>
+          <button id="btnClearCart" class="btn btn-outline-danger btn-sm" title="Kosongkan Keranjang">
+            <i class="fa-solid fa-trash-can"></i> Reset
+          </button>
+        </div>
+
+        <!-- Tabel / Daftar Item Belanja -->
+        <div class="cart-items-wrapper" id="cartItemsWrapper">
+          <table class="cart-table" id="cartTable">
+            <thead>
+              <tr>
+                <th class="col-item">Item & Harga</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-total">Subtotal</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="cartTableBody">
+              <!-- Item keranjang dimasukkan via JS -->
+            </tbody>
+          </table>
+
+          <!-- State jika keranjang belanja masih kosong -->
+          <div class="empty-cart-state" id="emptyCartState">
+            <div class="empty-cart-icon">
+              <i class="fa-solid fa-basket-shopping"></i>
+            </div>
+            <h3>Keranjang Masih Kosong</h3>
+            <p>Scan barcode produk dengan kamera, masukkan kode manual di atas, atau klik produk pada katalog.</p>
+          </div>
+        </div>
+
+        <!-- Footer Ringkasan Pembayaran & Kasir -->
+        <div class="cart-checkout-section">
+          
+          <!-- Rincian Total -->
+          <div class="calculation-breakdown">
+            <div class="calc-row">
+              <span class="label">Total Item:</span>
+              <strong id="totalItemQty">0 barang</strong>
+            </div>
+            <div class="calc-row">
+              <span class="label">Subtotal:</span>
+              <span class="value" id="cartSubtotalText">Rp 0</span>
+            </div>
+            <div class="calc-row highlight-total">
+              <span class="label">TOTAL BAYAR:</span>
+              <span class="value total-grand" id="cartGrandTotalText">Rp 0</span>
+            </div>
+          </div>
+
+          <!-- Input Uang Pelanggan & Kembalian -->
+          <div class="payment-input-area">
+            <label for="cashReceivedInput" class="payment-label">
+              <i class="fa-solid fa-money-bill-wave"></i> Nominal Uang Pembeli (Cash):
+            </label>
+            <div class="cash-input-group">
+              <span class="currency-prefix">Rp</span>
+              <input 
+                type="number" 
+                id="cashReceivedInput" 
+                class="form-control cash-input" 
+                placeholder="0" 
+                min="0"
+                step="500"
+              >
+            </div>
+
+            <!-- Tombol Cepat Pecahan Uang Rupiah -->
+            <div class="quick-cash-buttons">
+              <button type="button" class="btn-cash-quick" data-amount="exact">Uang Pas</button>
+              <button type="button" class="btn-cash-quick" data-amount="10000">10.000</button>
+              <button type="button" class="btn-cash-quick" data-amount="20000">20.000</button>
+              <button type="button" class="btn-cash-quick" data-amount="50000">50.000</button>
+              <button type="button" class="btn-cash-quick" data-amount="100000">100.000</button>
+            </div>
+
+            <!-- Kalkulasi Uang Kembalian -->
+            <div class="change-display-box" id="changeDisplayBox">
+              <div class="change-label">Uang Kembalian:</div>
+              <div class="change-amount" id="changeAmountText">Rp 0</div>
+            </div>
+          </div>
+
+          <!-- Tombol Aksi Pembayaran & Cetak Struk -->
+          <div class="checkout-actions">
+            <button id="btnProcessPayment" class="btn btn-success btn-checkout" disabled>
+              <i class="fa-solid fa-print"></i>
+              <span>Bayar & Cetak Struk</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL STRUK PEMBELIAN THERMAL ==================== -->
+  <div class="modal-backdrop hidden" id="receiptModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header-actions no-print">
+          <div class="modal-title-bar">
+            <i class="fa-solid fa-receipt"></i>
+            <h3>Struk Pembelian Berhasil</h3>
+          </div>
+          <button id="btnCloseModal" class="btn-close-modal" title="Tutup Modal">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Lembaran Struk Kertas Kasir (Thermal Paper Style) -->
+        <div class="thermal-receipt" id="printableReceipt">
+          <div class="receipt-header">
+            <div class="receipt-logo">
+              <span class="stripes-mini"></span>
+              <h2>IVAN KOPDES</h2>
+            </div>
+            <p class="receipt-subtitle">KOPERASI DESA IVAN KOPDES</p>
+            <p class="receipt-address">JL. MERDEKA NO. 45, JAKARTA PUSAT</p>
+            <p class="receipt-tax">NPWP: 01.345.678.9-012.000</p>
+            <div class="divider-dashed"></div>
+            <div class="receipt-meta">
+              <div class="meta-row">
+                <span>No. TRX : <strong id="recTrxId">TRX-001</strong></span>
+                <span id="recDate">04/10/2026</span>
+              </div>
+              <div class="meta-row">
+                <span>Kasir   : <strong id="recCashier">Ahmad Fauzi</strong></span>
+                <span id="recTime">16:00 WIB</span>
+              </div>
+            </div>
+            <div class="divider-dashed"></div>
+          </div>
+
+          <!-- Daftar Barang di Struk -->
+          <div class="receipt-body">
+            <table class="receipt-table">
+              <tbody id="receiptTableBody">
+                <!-- Diisi via JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Total & Pembayaran di Struk -->
+          <div class="receipt-footer">
+            <div class="divider-dashed"></div>
+            <div class="receipt-calc-row">
+              <span>Total Item</span>
+              <span id="recTotalQty">0</span>
+            </div>
+            <div class="receipt-calc-row bold-row">
+              <span>TOTAL BELANJA</span>
+              <span id="recGrandTotal">Rp 0</span>
+            </div>
+            <div class="receipt-calc-row">
+              <span>TUNAI</span>
+              <span id="recCashAmount">Rp 0</span>
+            </div>
+            <div class="receipt-calc-row bold-row">
+              <span>KEMBALI</span>
+              <span id="recChangeAmount">Rp 0</span>
+            </div>
+            <div class="divider-dashed"></div>
+            
+            <!-- Footer Pesan Penutup Minimarket -->
+            <div class="receipt-closing">
+              <p>TERIMA KASIH TELAH BERBELANJA</p>
+              <p class="small-note">KRITIK & SARAN: SMS/WA 0812-9988-7766</p>
+              <p class="barcode-font" id="recBarcodeFake">*8998866200578*</p>
+              <p class="thank-you-sub">Layanan Konsumen: halo@ivankopdes.id</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tombol Aksi Modal -->
+        <div class="modal-footer no-print">
+          <button id="btnPrintReceipt" class="btn btn-primary">
+            <i class="fa-solid fa-print"></i> Cetak Struk (Print)
+          </button>
+          <button id="btnNewTransaction" class="btn btn-success">
+            <i class="fa-solid fa-rotate-right"></i> Transaksi Baru
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Custom JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

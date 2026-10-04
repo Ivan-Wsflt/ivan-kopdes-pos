@@ -1,0 +1,4 @@
+# Ignore temp & zip files
+*.zip
+*.log
+.system_generated/
