@@ -307,8 +307,12 @@
           <!-- Tombol Aksi Pembayaran & Cetak Struk -->
           <div class="checkout-actions">
             <button id="btnProcessPayment" class="btn btn-success btn-checkout" disabled>
-              <i class="fa-solid fa-print"></i>
-              <span>Bayar & Cetak Struk</span>
+              <i class="fa-solid fa-money-bill-wave"></i>
+              <span>Bayar Tunai & Cetak</span>
+            </button>
+            <button id="btnOpenQrisModal" class="btn btn-qris btn-checkout" disabled>
+              <i class="fa-solid fa-qrcode"></i>
+              <span>Bayar via QRIS</span>
             </button>
           </div>
 
@@ -318,6 +322,64 @@
     </section>
 
   </main>
+
+  <!-- ==================== MODAL PEMBAYARAN QRIS ==================== -->
+  <div class="modal-backdrop hidden" id="qrisModal">
+    <div class="modal-dialog modal-dialog-qris">
+      <div class="modal-content">
+        <div class="modal-header-actions qris-modal-header no-print">
+          <div class="modal-title-bar">
+            <i class="fa-solid fa-qrcode"></i>
+            <h3>Pembayaran QRIS Nasional</h3>
+          </div>
+          <button id="btnCloseQrisModal" class="btn-close-modal" title="Tutup Modal QRIS">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="qris-modal-body">
+          <!-- Total Belanja Real-Time -->
+          <div class="qris-total-box">
+            <span class="qris-total-label">Total Pembayaran:</span>
+            <div class="qris-total-amount" id="qrisTotalAmount">Rp 0</div>
+            <div class="qris-merchant-badge">
+              <i class="fa-solid fa-store"></i> RAIVAN FAHRI PRADANA, EDUKASI
+            </div>
+          </div>
+
+          <!-- Tampilan Gambar QRIS -->
+          <div class="qris-image-container">
+            <img src="qris.png" alt="QRIS" class="qris-image" id="qrisImage">
+            <div class="qris-scan-guide">
+              <i class="fa-solid fa-mobile-screen-button"></i>
+              <span>Scan QR di atas menggunakan GoPay, BCA, Mandiri, BRI, BNI, OVO, Dana, atau ShopeePay</span>
+            </div>
+          </div>
+
+          <!-- Animasi Status Loading Pengecekan Simulasi -->
+          <div id="qrisLoadingStatus" class="qris-loading-status hidden">
+            <div class="qris-spinner"></div>
+            <div class="qris-loading-text">
+              <strong>Menghubungi Server Pembayaran...</strong>
+              <small>Sedang memverifikasi transaksi secara real-time</small>
+            </div>
+          </div>
+
+          <!-- Tombol Aksi Cek Status & Batal -->
+          <div class="qris-actions">
+            <button id="btnCheckQrisPayment" class="btn btn-qris-check">
+              <i class="fa-solid fa-rotate"></i>
+              <span id="btnCheckQrisText">Cek Status Pembayaran</span>
+            </button>
+            <button id="btnCancelQris" class="btn btn-outline-secondary btn-sm">
+              <i class="fa-solid fa-xmark"></i> Batal
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== MODAL STRUK PEMBELIAN THERMAL ==================== -->
   <div class="modal-backdrop hidden" id="receiptModal">
@@ -378,7 +440,7 @@
               <span id="recGrandTotal">Rp 0</span>
             </div>
             <div class="receipt-calc-row">
-              <span>TUNAI</span>
+              <span id="recPaymentMethodLabel">TUNAI</span>
               <span id="recCashAmount">Rp 0</span>
             </div>
             <div class="receipt-calc-row bold-row">

@@ -590,6 +590,12 @@ function renderCart() {
     subtotalText.textContent = "Rp 0";
     grandTotalText.textContent = "Rp 0";
     btnProcess.disabled = true;
+
+    const btnQris = document.getElementById("btnOpenQrisModal");
+    if (btnQris) btnQris.disabled = true;
+
+    const qrisTotalAmount = document.getElementById("qrisTotalAmount");
+    if (qrisTotalAmount) qrisTotalAmount.textContent = "Rp 0";
     return;
   }
 
@@ -633,6 +639,13 @@ function renderCart() {
   totalItemQty.textContent = `${totalQty} barang`;
   subtotalText.textContent = formatRupiah(grandTotal);
   grandTotalText.textContent = formatRupiah(grandTotal);
+
+  // Aktifkan tombol QRIS dan update nominal di modal QRIS secara real-time
+  const btnQris = document.getElementById("btnOpenQrisModal");
+  if (btnQris) btnQris.disabled = false;
+
+  const qrisTotalAmount = document.getElementById("qrisTotalAmount");
+  if (qrisTotalAmount) qrisTotalAmount.textContent = formatRupiah(grandTotal);
 }
 
 // ===================================================================
@@ -821,7 +834,7 @@ function setupCheckoutAndReceipt() {
   const btnPrintReceipt = document.getElementById("btnPrintReceipt");
   const btnNewTransaction = document.getElementById("btnNewTransaction");
 
-  // Tombol Bayar & Buka Struk
+  // Tombol Bayar Tunai & Buka Struk
   btnProcess.addEventListener("click", () => {
     const grandTotal = getCartGrandTotal();
     const cash = state.cashReceived;
@@ -840,8 +853,8 @@ function setupCheckoutAndReceipt() {
     // Suara Arpeggio Sukses / Cash Register
     playSuccessSound();
 
-    // Isi Konten Struk Kasir Thermal
-    populateReceiptData();
+    // Isi Konten Struk Kasir Thermal (Metode Tunai)
+    populateReceiptData("TUNAI");
 
     // Tampilkan Modal Struk
     receiptModal.classList.remove("hidden");
@@ -853,12 +866,12 @@ function setupCheckoutAndReceipt() {
     window.print();
   });
 
-  // Tutup Modal
+  // Tutup Modal Struk
   btnCloseModal.addEventListener("click", () => {
     receiptModal.classList.add("hidden");
   });
 
-  // Tombol Transaksi Baru dari Modal
+  // Tombol Transaksi Baru dari Modal Struk
   btnNewTransaction.addEventListener("click", () => {
     receiptModal.classList.add("hidden");
     startNewTransaction();
@@ -866,16 +879,182 @@ function setupCheckoutAndReceipt() {
 
   // Tombol Reset Keranjang
   btnClearCart.addEventListener("click", clearCart);
+
+  // Inisialisasi Fitur Pembayaran QRIS
+  setupQrisPayment();
+}
+
+/**
+ * ===================================================================
+ * 12B. FITUR PEMBAYARAN QRIS & CATATAN INTEGRASI DYNAMIC QRIS
+ * ===================================================================
+ * 
+ * 💡 CATATAN PANDUAN INTEGRASI DYNAMIC QRIS (API PAYMENT GATEWAY SEPERTI MIDTRANS):
+ * --------------------------------------------------------------------------------
+ * Saat ini aplikasi menggunakan foto statis ("Static QRIS" dari qris.png).
+ * Pada Static QRIS, pembeli harus memasukkan nominal rupiah secara manual di HP mereka.
+ * 
+ * Untuk mengubahnya menjadi "Dynamic QRIS" (di mana nominal belanja otomatis terkunci):
+ * 
+ * 1. TITIK REQUEST GENERATE QR (Frontend -> Backend):
+ *    Di dalam function setupQrisPayment() saat tombol 'Bayar via QRIS' diklik,
+ *    ganti pemanggilan gambar statis dengan request HTTP POST ke endpoint server backend Anda:
+ *    
+ *    const response = await fetch('/api/create-qris', {
+ *      method: 'POST',
+ *      headers: { 'Content-Type': 'application/json' },
+ *      body: JSON.stringify({
+ *        order_id: generateInvoiceNumber(state.invoiceCounter),
+ *        gross_amount: getCartGrandTotal(),
+ *        items: state.cart.map(item => ({
+ *          id: item.product.barcode,
+ *          name: item.product.name,
+ *          price: item.product.price,
+ *          quantity: item.qty
+ *        }))
+ *      })
+ *    });
+ *    const qrisData = await response.json();
+ * 
+ * 2. BACKEND INTEGRATION (Node.js / Express / Laravel / Python):
+ *    Server backend Anda akan memanggil API Midtrans Core API (Charge QRIS):
+ *      POST https://api.sandbox.midtrans.com/v2/charge (Sandbox) atau https://api.midtrans.com/v2/charge (Production)
+ *      Header:
+ *        Authorization: Basic <Base64(SERVER_KEY:)>
+ *        Content-Type: application/json
+ *      Payload:
+ *        {
+ *          "payment_type": "qris",
+ *          "transaction_details": {
+ *            "order_id": order_id,
+ *            "gross_amount": gross_amount
+ *          },
+ *          "qris": {
+ *            "acquirer": "gopay" // Mendukung semua e-wallet & mobile banking via QRIS
+ *          }
+ *        }
+ * 
+ * 3. MENAMPILKAN DYNAMIC QRCODE KE USER:
+ *    Midtrans akan mengembalikan response JSON yang berisi:
+ *      - actions[0].url -> URL gambar QR Code PNG yang sudah di-generate Midtrans
+ *      - qr_string -> String EMVCo QRIS (bisa di-render via library frontend qrcode.js)
+ *    
+ *    Di frontend, cukup pasang URL tersebut:
+ *      document.getElementById('qrisImage').src = qrisData.actions[0].url;
+ * 
+ * 4. REAL-TIME STATUS CHECKING (Menggantikan simulasi 3 detik saat ini):
+ *    Gunakan salah satu dari dua pendekatan:
+ *    A. Polling Berkala:
+ *       Setiap 2-3 detik, frontend memanggil endpoint backend `GET /api/status-qris/:order_id`
+ *       (yang meneruskan ke Midtrans: GET https://api.midtrans.com/v2/:order_id/status).
+ *       Jika response `transaction_status === "settlement"`, otomatis jalankan checkout sukses!
+ *    B. Webhook (Rekomendasi Production):
+ *       Midtrans mengirim HTTP POST notifikasi ke Webhook URL server Anda ketika dana masuk.
+ *       Server Anda kemudian memberi sinyal ke kasir via WebSocket (Socket.io) atau SSE (Server-Sent Events).
+ * ===================================================================
+ */
+
+function setupQrisPayment() {
+  const btnOpenQris = document.getElementById("btnOpenQrisModal");
+  const qrisModal = document.getElementById("qrisModal");
+  const btnCloseQris = document.getElementById("btnCloseQrisModal");
+  const btnCancelQris = document.getElementById("btnCancelQris");
+  const btnCheckQris = document.getElementById("btnCheckQrisPayment");
+  const btnCheckText = document.getElementById("btnCheckQrisText");
+  const qrisLoading = document.getElementById("qrisLoadingStatus");
+  const qrisTotalAmount = document.getElementById("qrisTotalAmount");
+
+  // Buka Modal Pembayaran QRIS
+  btnOpenQris.addEventListener("click", () => {
+    const grandTotal = getCartGrandTotal();
+    if (grandTotal === 0) {
+      showToast("Keranjang belanja masih kosong!", "warning");
+      return;
+    }
+
+    // Tampilkan Total Pembayaran secara real-time
+    qrisTotalAmount.textContent = formatRupiah(grandTotal);
+
+    // Reset status UI modal
+    qrisLoading.classList.add("hidden");
+    btnCheckQris.disabled = false;
+    btnCancelQris.disabled = false;
+    btnCheckText.textContent = "Cek Status Pembayaran";
+
+    // Munculkan Modal QRIS
+    qrisModal.classList.remove("hidden");
+    playBeepSound();
+  });
+
+  // Fungsi Tutup Modal QRIS
+  const closeQrisModal = () => {
+    qrisModal.classList.add("hidden");
+    qrisLoading.classList.add("hidden");
+  };
+
+  btnCloseQris.addEventListener("click", closeQrisModal);
+  btnCancelQris.addEventListener("click", closeQrisModal);
+
+  // Simulasi Pengecekan Pembayaran (Dummy Simulation)
+  btnCheckQris.addEventListener("click", () => {
+    const grandTotal = getCartGrandTotal();
+    if (grandTotal === 0) return;
+
+    // Kunci tombol aksi saat proses verifikasi berlangsung
+    btnCheckQris.disabled = true;
+    btnCancelQris.disabled = true;
+    btnCheckText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Mengecek Status...`;
+    qrisLoading.classList.remove("hidden");
+    playBeepSound();
+
+    // Simulasi waktu tunggu verifikasi bank/server selama 3 detik
+    setTimeout(() => {
+      // 1. Sembunyikan loading dan tutup modal QRIS
+      qrisLoading.classList.add("hidden");
+      qrisModal.classList.add("hidden");
+      btnCheckQris.disabled = false;
+      btnCancelQris.disabled = false;
+      btnCheckText.textContent = "Cek Status Pembayaran";
+
+      // 2. Mainkan suara sukses kasir
+      playSuccessSound();
+
+      // 3. Tampilkan Notifikasi Toast
+      showToast("Pembayaran Berhasil! Transaksi QRIS diterima.", "success");
+
+      // 4. Siapkan Data Struk Thermal (Metode QRIS)
+      populateReceiptData("QRIS");
+
+      // 5. Tampilkan Modal Struk Kasir
+      const receiptModal = document.getElementById("receiptModal");
+      receiptModal.classList.remove("hidden");
+
+      // 6. Otomatis Cetak Struk
+      window.print();
+
+      // 7. Reset Keranjang Belanja Menjadi Kosong
+      startNewTransaction();
+    }, 3000);
+  });
 }
 
 // Mengisi data transaksi ke tampilan struk thermal kertas
-function populateReceiptData() {
+function populateReceiptData(paymentMethod = "TUNAI") {
   const grandTotal = getCartGrandTotal();
-  const cash = state.cashReceived;
-  const change = Math.max(0, cash - grandTotal);
-  const now = new Date();
+  let cash = state.cashReceived;
+  let change = 0;
 
-  // Tanggal & Waktu Struk
+  const methodLabel = document.getElementById("recPaymentMethodLabel");
+  if (paymentMethod === "QRIS") {
+    cash = grandTotal;
+    change = 0;
+    if (methodLabel) methodLabel.textContent = "QRIS - GOPAY";
+  } else {
+    change = Math.max(0, cash - grandTotal);
+    if (methodLabel) methodLabel.textContent = "TUNAI";
+  }
+
+  const now = new Date();
   const dateStr = now.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
   const timeStr = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB";
   const invNumber = generateInvoiceNumber(state.invoiceCounter);
