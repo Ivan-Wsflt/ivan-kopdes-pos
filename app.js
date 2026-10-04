@@ -17,7 +17,7 @@
 // ===================================================================
 const PRODUCT_DATABASE = [
   {
-    barcode: "8998866200578",
+    barcode: "8994450500623",
     name: "Indomie Mi Goreng Spesial 85g",
     category: "Makanan",
     price: 3500,
@@ -304,7 +304,7 @@ function showToast(message, type = "info") {
 // Inisialisasi daftar kamera yang terpasang pada perangkat
 async function initCameraDevices() {
   const cameraSelect = document.getElementById("cameraSelect");
-  
+
   if (typeof Html5Qrcode === "undefined") {
     console.error("Library Html5Qrcode belum termuat!");
     return;
@@ -448,46 +448,127 @@ function onBarcodeScanFailure(error) {
 // ===================================================================
 
 /**
- * Memproses string barcode: Mencari ke database, bunyi beep, dan tambah ke keranjang
- * @param {string} barcodeCode 
+ * Memproses string barcode/nama: Mencari ke database, bunyi beep, dan tambah ke keranjang.
+ * 
+ * Urutan pencarian (Smart Search Auto-Add):
+ * 1. Cari exact match barcode (untuk scanner fisik & USB)
+ * 2. Jika tidak ketemu barcode, cari nama barang yang mengandung kata kunci (fuzzy/partial, case-insensitive)
+ * 3. Jika nama ketemu, ambil kecocokan pertama dan tambahkan ke keranjang
+ * @param {string} barcodeCode - Bisa berupa angka barcode ATAU sebagian nama barang
  */
 function handleBarcodeProcessed(barcodeCode) {
   const cleanCode = barcodeCode.trim();
   if (!cleanCode) return;
 
-  // Update banner indikator scan terakhir
+  // Sembunyikan dropdown suggestion jika ada
+  hideSuggestions();
+
   const lastScanBanner = document.getElementById("lastScanBanner");
-  lastScanBanner.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Memproses barcode: <strong>${cleanCode}</strong>`;
+  lastScanBanner.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Memproses: <strong>${cleanCode}</strong>`;
 
-  // Cari di database produk
-  const product = PRODUCT_DATABASE.find(item => item.barcode === cleanCode);
+  // ── LANGKAH 1: Cari exact barcode match ──
+  let product = PRODUCT_DATABASE.find(item => item.barcode === cleanCode);
 
-  if (product) {
-    // 1. Mainkan suara BEEP kasir
-    playBeepSound();
+  // ── LANGKAH 2: Fuzzy Name Search (jika barcode tidak ditemukan) ──
+  // Cari produk yang namanya MENGANDUNG kata kunci (case-insensitive)
+  if (!product) {
+    const keyword = cleanCode.toLowerCase();
+    const nameMatches = PRODUCT_DATABASE.filter(item =>
+      item.name.toLowerCase().includes(keyword)
+    );
 
-    // 2. Tambah ke keranjang belanja
-    addToCart(product);
-
-    // 3. Tampilkan notifikasi & update banner
-    lastScanBanner.className = "last-scan-banner success";
-    lastScanBanner.innerHTML = `<i class="fa-solid fa-check-circle"></i> Berhasil di-scan: <strong>${product.name}</strong> (${formatRupiah(product.price)})`;
-
-    showToast(`Ditambahkan: ${product.name}`, "success");
-  } else {
-    // Barcode tidak terdaftar di database
-    playErrorSound();
-    lastScanBanner.className = "last-scan-banner";
-    lastScanBanner.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:var(--danger)"></i> Barcode tidak dikenali: <strong>${cleanCode}</strong>`;
-
-    showToast(`Produk dengan barcode '${cleanCode}' tidak ditemukan!`, "error");
+    if (nameMatches.length > 0) {
+      // Ambil kecocokan pertama (urutan pertama di database)
+      product = nameMatches[0];
+      const extraInfo = nameMatches.length > 1
+        ? ` (${nameMatches.length} produk cocok, diambil yang pertama)`
+        : "";
+      showToast(`Ditemukan via nama: "${keyword}"${extraInfo}`, "info");
+    }
   }
 
-  // Kosongkan input manual bila ada isinya
+  if (product) {
+    playBeepSound();
+    addToCart(product);
+
+    lastScanBanner.className = "last-scan-banner success";
+    lastScanBanner.innerHTML = `<i class="fa-solid fa-check-circle"></i> Ditambahkan: <strong>${product.name}</strong> — ${formatRupiah(product.price)}`;
+
+    showToast(`✓ ${product.name}`, "success");
+  } else {
+    playErrorSound();
+    lastScanBanner.className = "last-scan-banner";
+    lastScanBanner.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:var(--danger)"></i> Tidak ditemukan: <strong>${cleanCode}</strong>`;
+
+    showToast(`Produk "${cleanCode}" tidak ditemukan di database`, "error");
+  }
+
+  // Kosongkan & kembalikan fokus ke input manual (siap scan berikutnya)
   const manualInput = document.getElementById("manualBarcodeInput");
   manualInput.value = "";
   document.getElementById("btnClearManualInput").classList.add("hidden");
   manualInput.focus();
+}
+
+/**
+ * Mencari kecocokan nama barang secara real-time untuk dropdown suggestion
+ * @param {string} keyword
+ * @returns {Array} array produk yang cocok
+ */
+function searchProductsByName(keyword) {
+  if (!keyword || keyword.length < 1) return [];
+  const kw = keyword.toLowerCase();
+  return PRODUCT_DATABASE.filter(item =>
+    item.name.toLowerCase().includes(kw) ||
+    item.barcode.startsWith(kw)
+  ).slice(0, 5); // Maksimal 5 saran
+}
+
+/** Tampilkan dropdown suggestion di bawah input manual */
+function showSuggestions(matches) {
+  let dropdown = document.getElementById("searchSuggestionDropdown");
+  if (!dropdown) {
+    dropdown = document.createElement("div");
+    dropdown.id = "searchSuggestionDropdown";
+    dropdown.className = "search-suggestion-dropdown";
+    const form = document.getElementById("barcodeInputForm");
+    form.style.position = "relative";
+    form.appendChild(dropdown);
+  }
+
+  if (matches.length === 0) {
+    dropdown.classList.add("hidden");
+    return;
+  }
+
+  dropdown.innerHTML = matches.map(p => `
+    <div class="suggestion-item" data-barcode="${p.barcode}">
+      <div class="sug-icon" style="color: ${p.color}">
+        <i class="fa-solid ${p.icon}"></i>
+      </div>
+      <div class="sug-info">
+        <span class="sug-name">${p.name}</span>
+        <span class="sug-meta">${p.barcode} · ${formatRupiah(p.price)}</span>
+      </div>
+      <i class="fa-solid fa-plus sug-add-icon"></i>
+    </div>
+  `).join("");
+
+  // Klik item suggestion → langsung tambah ke keranjang
+  dropdown.querySelectorAll(".suggestion-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const barcode = el.getAttribute("data-barcode");
+      handleBarcodeProcessed(barcode);
+    });
+  });
+
+  dropdown.classList.remove("hidden");
+}
+
+/** Sembunyikan dropdown suggestion */
+function hideSuggestions() {
+  const dropdown = document.getElementById("searchSuggestionDropdown");
+  if (dropdown) dropdown.classList.add("hidden");
 }
 
 /**
@@ -640,7 +721,9 @@ function renderCart() {
   subtotalText.textContent = formatRupiah(grandTotal);
   grandTotalText.textContent = formatRupiah(grandTotal);
 
-  // Aktifkan tombol QRIS dan update nominal di modal QRIS secara real-time
+  // Aktifkan kedua tombol pembayaran (Tunai & QRIS) saat keranjang terisi
+  if (btnProcess) btnProcess.disabled = false;
+
   const btnQris = document.getElementById("btnOpenQrisModal");
   if (btnQris) btnQris.disabled = false;
 
@@ -671,23 +754,23 @@ function calculatePayment() {
     return;
   }
 
+  // Tombol bayar tunai SELALU AKTIF jika keranjang terisi
+  btnProcess.disabled = false;
+
   const change = cashVal - grandTotal;
 
   if (cashVal === 0) {
-    changeDisplay.textContent = "Rp 0";
+    changeDisplay.textContent = "Rp 0 (Uang Pas)";
     changeDisplay.className = "change-amount";
-    btnProcess.disabled = true;
   } else if (change >= 0) {
     // Uang Pas atau Ada Kembalian
     changeDisplay.textContent = formatRupiah(change);
     changeDisplay.className = "change-amount positive";
-    btnProcess.disabled = false;
   } else {
     // Uang Kurang
     const kekurangan = Math.abs(change);
     changeDisplay.textContent = `Kurang ${formatRupiah(kekurangan)}`;
     changeDisplay.className = "change-amount negative";
-    btnProcess.disabled = true;
   }
 }
 
@@ -731,7 +814,7 @@ function renderCatalog() {
   const filtered = PRODUCT_DATABASE.filter(product => {
     const matchCategory = state.activeCategory === "ALL" || product.category === state.activeCategory;
     const matchQuery = product.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-                       product.barcode.includes(state.searchQuery);
+      product.barcode.includes(state.searchQuery);
     return matchCategory && matchQuery;
   });
 
@@ -800,10 +883,30 @@ function setupManualInputEvents() {
   const input = document.getElementById("manualBarcodeInput");
   const btnClear = document.getElementById("btnClearManualInput");
 
+  // Tampilkan tombol clear & suggestion dropdown saat ada input
   input.addEventListener("input", () => {
-    if (input.value.trim().length > 0) {
+    const val = input.value.trim();
+    if (val.length > 0) {
       btnClear.classList.remove("hidden");
+      // Live suggestion: hanya tampil saat input berupa nama (bukan angka murni panjang)
+      const isLikelyBarcode = /^\d{6,}$/.test(val);
+      if (!isLikelyBarcode) {
+        const matches = searchProductsByName(val);
+        showSuggestions(matches);
+      } else {
+        hideSuggestions();
+      }
     } else {
+      btnClear.classList.add("hidden");
+      hideSuggestions();
+    }
+  });
+
+  // Navigasi keyboard: Escape → tutup dropdown
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      hideSuggestions();
+      input.value = "";
       btnClear.classList.add("hidden");
     }
   });
@@ -811,14 +914,21 @@ function setupManualInputEvents() {
   btnClear.addEventListener("click", () => {
     input.value = "";
     btnClear.classList.add("hidden");
+    hideSuggestions();
     input.focus();
   });
 
+  // Klik di luar dropdown → tutup suggestion
+  document.addEventListener("click", (e) => {
+    if (!form.contains(e.target)) hideSuggestions();
+  });
+
+  // Submit (Enter): coba barcode dulu, lalu fuzzy nama jika tidak cocok
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const barcode = input.value.trim();
-    if (barcode) {
-      handleBarcodeProcessed(barcode);
+    const query = input.value.trim();
+    if (query) {
+      handleBarcodeProcessed(query);
     }
   });
 }
@@ -837,16 +947,23 @@ function setupCheckoutAndReceipt() {
   // Tombol Bayar Tunai & Buka Struk
   btnProcess.addEventListener("click", () => {
     const grandTotal = getCartGrandTotal();
-    const cash = state.cashReceived;
+    let cash = state.cashReceived;
 
     if (state.cart.length === 0) {
       showToast("Keranjang belanja masih kosong!", "warning");
       return;
     }
 
-    if (cash < grandTotal) {
+    // Jika kasir belum mengetik nominal uang tunai, otomatis gunakan "Uang Pas"
+    if (!cash || cash === 0) {
+      cash = grandTotal;
+      state.cashReceived = grandTotal;
+      const cashInput = document.getElementById("cashReceivedInput");
+      if (cashInput) cashInput.value = grandTotal;
+      calculatePayment();
+    } else if (cash < grandTotal) {
       playErrorSound();
-      showToast("Nominal uang tunai pembeli belum mencukupi!", "error");
+      showToast(`Nominal uang tunai pembeli kurang ${formatRupiah(grandTotal - cash)}!`, "error");
       return;
     }
 
@@ -858,7 +975,7 @@ function setupCheckoutAndReceipt() {
 
     // Tampilkan Modal Struk
     receiptModal.classList.remove("hidden");
-    showToast("Transaksi Berhasil!", "success");
+    showToast("Transaksi Tunai Berhasil!", "success");
   });
 
   // Tombol Cetak Struk (Mengaktifkan window.print)
@@ -1102,7 +1219,7 @@ function startNewTransaction() {
 
   document.getElementById("invoiceNumber").textContent = generateInvoiceNumber(state.invoiceCounter);
   document.getElementById("cashReceivedInput").value = "";
-  
+
   renderCart();
   calculatePayment();
 
